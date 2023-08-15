@@ -1,17 +1,14 @@
-﻿using ChessChallenge.API;
+using ChessChallenge.API;
 using System;
-using System.Linq;
-using System.Collections;
 
-
-// Link to Sebastian GitHub: https://github.com/SebLague/Chess-Challenge
-// Docs:                     https://seblague.github.io/chess-coding-challenge/documentation/
-public class MyBot : IChessBot
+namespace ChessChallenge.Example
 {
-  
-    bool botColor;
-    Hashtable transPosTable = new Hashtable();
-
+    // A simple bot that can spot mate in one, and always captures the most valuable piece it can.
+    // Plays randomly otherwise.
+    public class EvilBot : IChessBot
+    {
+       bool botColor;
+    
     public Move Think(Board board, Timer timer)
     {
         
@@ -65,7 +62,7 @@ public class MyBot : IChessBot
         foreach (Move move in legalMoves){
 
             board.MakeMove(move);
-            double eval = MaxMin(board, depth - 1 , alpha, beta, !maxPlayer);
+            double eval = MaxMin(board, depth - 1, alpha, beta, !maxPlayer);
             board.UndoMove(move);
             if (maxPlayer)
             {
@@ -78,10 +75,9 @@ public class MyBot : IChessBot
             }
             if (beta <= alpha) break;
         }
-
-        
         return maxEval;
     }
+
 
     double Quiesce(Board board, Move[] legalMoves, double alpha, double beta ) {
         double stand_pat = EvalPos(board);
@@ -105,6 +101,10 @@ public class MyBot : IChessBot
         }
         return alpha;
     }
+
+
+
+
 
     int[] pieceValues = { 0, 100, 300, 300, 500, 900, 10000 };
     
@@ -161,8 +161,6 @@ public class MyBot : IChessBot
 
     double EvalPos(Board board)
     {
-  
-  
         double currentEval = 0;
            
         int botPieceVals = 0;
@@ -212,9 +210,9 @@ public class MyBot : IChessBot
             //currentEval += 200;
         }*/
 
-        
-      
         return currentEval;
+
+        
     }
 
    
@@ -251,5 +249,6 @@ public class MyBot : IChessBot
 
         (arr[high], arr[i+1]) = (arr[i+1], arr[high]);
         return i + 1;
+    }
     }
 }
