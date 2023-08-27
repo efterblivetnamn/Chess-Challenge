@@ -1,16 +1,19 @@
-﻿using ChessChallenge.API;
+using ChessChallenge.API;
 using System;
 using System.Linq;
-
-public class MyBot : IChessBot
+namespace ChessChallenge.Example
 {
-    // Piece values: null, pawn, knight, bishop, rook, queen, king
-   bool botColor;
+    // A simple bot that can spot mate in one, and always captures the most valuable piece it can.
+    // Plays randomly otherwise.
+    public class EvilBot : IChessBot
+    {
+      
+bool botColor;
    
-
+    Move BestCurrentMove;
     Move rootMove;
  
-    
+
     int posEvaled; //#Debug
 
     Timer GameTimer;
@@ -34,6 +37,7 @@ public class MyBot : IChessBot
         
         botColor = board.IsWhiteToMove;
         GameTimer = timer;
+    
         rootMove = board.GetLegalMoves()[0];
 
         int depth = 0;
@@ -43,8 +47,8 @@ public class MyBot : IChessBot
         int alpha = -8000000, beta = 8000000;
 
         searchMaxTime = GameTimer.MillisecondsRemaining/30;
-    
-        //searchMaxTime = 20000;
+        
+      //  searchMaxTime = 20000;
 
         while (GameTimer.MillisecondsElapsedThisTurn <= searchMaxTime) {
       //  while (true) {
@@ -56,9 +60,8 @@ public class MyBot : IChessBot
 
 
           //  if (GameTimer.MillisecondsElapsedThisTurn >= searchMaxTime) return Move.NullMove; //#Debug
-            if (GameTimer.MillisecondsElapsedThisTurn >= searchMaxTime) return rootMove;
 
-           Console.WriteLine("Depth: " + depth + " Eval: " + tt[board.ZobristKey%entries].score + " Pos: " + posEvaled + " " + rootMove + " ms: " +  timer.MillisecondsElapsedThisTurn); //#Debug          
+          //  Console.WriteLine("Depth: " + depth + " Eval: " + tt[board.ZobristKey%entries].score + " Pos: " + posEvaled + " " + rootMove + " ms: " +  timer.MillisecondsElapsedThisTurn); //#Debug          
 
         
         
@@ -123,7 +126,7 @@ public class MyBot : IChessBot
        
 
 
-        if (isQsearch || CurrDepth >= 7)
+        if (isQsearch)
         {
  
             bestEvalItter = EvalPos(board, CurrDepth);
@@ -141,13 +144,23 @@ public class MyBot : IChessBot
                 {
                     return move == entry.move && entry.key == key? 100000 : MoveToInt(move);        
                 }).ToArray();
-        
 
-        
+        if ( !isQsearch && legalMoves.Length == 0 && !board.IsInCheck()) return 0;
+/*
+     Move[] legalMoves = board.GetLegalMoves(isQsearch);
 
-    
+
+        int [] scores = new int[legalMoves.Length];
+
+        for (int i = 0; i < legalMoves.Length; i++){
+            scores[i] =    entry.key == key && legalMoves[i] == entry.move ?99999 : MoveToInt(legalMoves[i]);
+        }
+      
+      
+        Quicksort(legalMoves, 0, legalMoves.Length-1, scores);
+    */
        
-            if ( !isQsearch && legalMoves.Length == 0 && !board.IsInCheck()) return 0;
+
         Move bestMove = Move.NullMove;
 
         foreach (Move move in legalMoves)
@@ -251,11 +264,55 @@ public int GetPstVal(int psq) {
     }
 
 
+/*
+
+    // Quicksort(arr, 0, arr.Length - 1);
+    void Quicksort(Move[] arr, int low, int high, int[] scores)
+    {
+        if (low < high)
+        {
+           
+            int i = low - 1;
+
+            for (int j = low; j < high; j++)
+            {
+              //  int v1 = MoveToInt(arr[j]); //  arr[j].IsPromotion ? 0 : (arr[j].IsCapture ? 1 : 2);
+              //  int v2 = MoveToInt(arr[high]); //arr[high].IsPromotion ? 0 : (arr[high].IsCapture ? 1 : 2);
+                
+                if ( scores[j] > scores[high] )
+                {
+                    i++;
+                    (arr[j], arr[i]) = (arr[i], arr[j]);
+                    (scores[j], scores[i]) = (scores[i], scores[j]);
+                }
+            }
+
+            (arr[high], arr[i+1]) = (arr[i+1], arr[high]);
+            (scores[high], scores[i+1]) = (scores[i+1], scores[high]);
+
+            
+            int pivotIndex =  i + 1;
+
+            Quicksort(arr, low, pivotIndex - 1, scores);
+            Quicksort(arr, pivotIndex + 1, high, scores);
 
 
-    int MoveToInt(Move move){
-      return move.IsPromotion ? 6000 : (move.IsCapture ? ((int)move.CapturePieceType - (int)move.MovePieceType) * 100: -999999);
+           // int mid = (low + high) / 2;
+          //  int[] indices = { low, mid, high };
+          //  Array.Sort(indices, (a, b) => scores[b].CompareTo(scores[a]));
+          
+          //  Quicksort(arr, low,  indices[1] - 1, scores);
+          //  Quicksort(arr,  indices[1] + 1, high, scores);
+
+        }
     }
 
-}
+*/
 
+    int MoveToInt(Move move){
+      return move.IsPromotion ? 6 : (move.IsCapture ? ((int)move.CapturePieceType - (int)move.MovePieceType) * 100: -999999);
+    }
+
+
+    }
+}
