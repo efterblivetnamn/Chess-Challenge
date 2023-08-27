@@ -1,120 +1,193 @@
 ﻿using ChessChallenge.API;
 using System;
 using System.Linq;
-using System.Collections;
 
-
-// Link to Sebastian GitHub: https://github.com/SebLague/Chess-Challenge
-// Docs:                     https://seblague.github.io/chess-coding-challenge/documentation/
 public class MyBot : IChessBot
 {
+    // Piece values: null, pawn, knight, bishop, rook, queen, king
     bool botColor;
+   
+    Move BestCurrentMove;
+    Move rootMove;
+ 
+
+    int posEvaled; //#Debug
+
+    Timer GameTimer;
+    int searchMaxTime;
+    //TT
+
+      struct TTEntry {
+        public ulong key;
+        public Move move;
+        public int depth, bound, score;
+        public TTEntry(ulong _key, Move _move, int _depth, int _score, int _bound) {
+            key = _key; move = _move; depth = _depth; score = _score; bound = _bound;
+        }
+    }
+    const int entries =  (1<<20);   //128 * 1024^2 / 28; 
+    TTEntry[] tt = new TTEntry[entries];
+
 
     public Move Think(Board board, Timer timer)
     {
         
         botColor = board.IsWhiteToMove;
-        Move moveToPlay = new();
+        GameTimer = timer;
+        searchMaxTime = GameTimer.MillisecondsRemaining/30;
+        BestCurrentMove = board.GetLegalMoves()[0];
 
-        Move[] LegalMoves = board.GetLegalMoves();
-        Quicksort(LegalMoves, 0, LegalMoves.Length - 1);
+        int depth = 1;
 
-        int bestEval = int.MinValue;
-        
-            foreach (Move move in LegalMoves)
-            {
+        posEvaled = 0; //#Debug
 
-                
-
-                board.MakeMove(move);
-                if (board.IsInCheckmate() )
-                {
-                    Console.WriteLine("We Fuking Won");
-                    return move;
-                }
-                int currentEval = MaxMin(board, 3, int.MinValue, int.MaxValue, false, timer);
-                board.UndoMove(move);
-                if (currentEval >= bestEval)
-                {
-                    bestEval = currentEval;
-                    moveToPlay = move;
-                }
-            }
+        int alpha = -9000000, beta = 9000000;
+        int aspiration = 50;
+        while (GameTimer.MillisecondsElapsedThisTurn <= searchMaxTime) {
+       // while (true) {
         
 
-        return moveToPlay;
+           
+         
+            int test = negamax(board, depth++, alpha, beta, 0); //Starting on 2  
+
+            Console.WriteLine("Depth: " + depth + " Eval: " + tt[board.ZobristKey%entries].score + " Pos: " + posEvaled + " " + rootMove + " ms: " +  timer.MillisecondsElapsedThisTurn); //#Debug          
+
+        
+        
+                if (depth > 50) break;
+        }
+
+
+
+        
+        return rootMove;
     }
 
-    int MaxMin(Board board, int depth, int alpha, int beta, bool maxPlayer, Timer timer)
+    int negamax(Board board, int depth, int alpha, int beta, int CurrDepth) 
     {
-        if (board.IsDraw()) return 0;
+        bool NotMainNode =(CurrDepth != 0);  // Bad token save
+        int origAlpha =alpha; 
+        bool isQsearch = depth <= 0;
+        int bestEvalItter = -10000000;
+        if (NotMainNode && board.IsRepeatedPosition() ) return 0;
+        if (board.IsInCheckmate()) return (-900000 + CurrDepth) * (botColor==board.IsWhiteToMove? 1 : -1);
+
+        //Read TTT
         
-        int maxEval = maxPlayer? int.MinValue : int.MaxValue;
-        if (board.IsInCheckmate()) return maxEval;
+        ulong key = board.ZobristKey;
+        TTEntry entry = tt[key%entries];
+
+        if (entry.key == key && NotMainNode &&
+                    entry.depth >= depth)
+                {
+                  
+                    int score = entry.score;
+
+                    // Exact
+                    if (entry.bound == 1)
+                        return score;
+
+                    // Lowerbound
+                    if (entry.bound == 3)
+                        alpha = Math.Max(alpha, score);
+                    // Upperbound
+                    else
+                        beta = Math.Min(beta, score);
+
+                    if (alpha >= beta)
+                        return score;
+                }
+/*
         
-        Move[] legalMoves = board.GetLegalMoves();
-        
-        if (depth == 0) return Quiesce(board, legalMoves, alpha, beta, timer);
+        if(NotMainNode && entry.key == key && entry.depth >= depth && (
+            entry.bound == 3 // exact score
+                || (entry.bound == 2 && entry.score >= beta )// lower bound, fail high
+                || (entry.bound == 1 && entry.score <= alpha )// upper bound, fail low
+        )) {
+            posEvaled++; //#Debug
+            return entry.score;
+        }
+          
+*/
        
 
-        Quicksort(legalMoves, 0, legalMoves.Length - 1);
-        foreach (Move move in legalMoves){
 
+        if (isQsearch)
+        {
+ 
+            bestEvalItter = EvalPos(board);
+
+            posEvaled++; //#Debug
+
+            alpha = Math.Max(alpha, bestEvalItter);
+            if (alpha >= beta)
+                return bestEvalItter;
+        }
+     
+      
+      
+
+        Move[]  legalMoves = board.GetLegalMoves(isQsearch)?.OrderByDescending(move =>   //  isQsearch && !Check ?
+                {
+                    return move == entry.move && entry.key == key? 100000 : MoveToInt(move);        
+                }).ToArray();
+
+
+/*
+     Move[] legalMoves = board.GetLegalMoves(isQsearch);
+
+
+        int [] scores = new int[legalMoves.Length];
+
+        for (int i = 0; i < legalMoves.Length; i++){
+            scores[i] =    entry.key == key && legalMoves[i] == entry.move ?99999 : MoveToInt(legalMoves[i]);
+        }
+      
+      
+        Quicksort(legalMoves, 0, legalMoves.Length-1, scores);
+    */
+       
+        Move bestMove = Move.NullMove;
+
+        foreach (Move move in legalMoves)
+        {
             
-          
+            if (GameTimer.MillisecondsElapsedThisTurn > searchMaxTime) return 999999999;
+            
+
             board.MakeMove(move);
-            int eval = MaxMin(board, depth - 1 , alpha, beta, !maxPlayer, timer);
+            int score = -negamax(board, depth-1, -beta, -alpha, CurrDepth + 1);
             board.UndoMove(move);
 
-            if (maxPlayer)
+            if (score > bestEvalItter)
             {
-                maxEval = Math.Max(maxEval, eval);
-                alpha = Math.Max(alpha, eval);
-            } else
-            {
-                maxEval = Math.Min(maxEval, eval);
-                beta = Math.Min(beta, eval);
+                bestEvalItter = score;
+                bestMove = move;
+
+                if (!NotMainNode)rootMove = move;
+                
+                alpha = Math.Max(alpha, score);
+
+                if (alpha >= beta) break; //Alpha = Nytt High Score, Men också Större än Motståndarens bästa (Han kmr int välja denna gren), (Motståndaren är då Current negaMaxSpelare)
             }
-           
-            if (beta <= alpha) break;
 
          
-        }
+         }
+        
+        //if (isQsearch) return bestEvalItter;
+        // TTTable Store.
+       // int bound = bestEvalItter >= beta ? 2 : bestEvalItter > origAlpha ? 3 : 1; // 3 = exact, 2 = lower bound, 1 = upper bound
+        int bound = bestEvalItter >= beta ? 3 : bestEvalItter <= origAlpha ? 2 : 1;
+ 
+        tt[key % entries] = new TTEntry(key, bestMove, depth, bestEvalItter, bound);
+        
+        return bestEvalItter;
 
-        return maxEval;
-    }
-
-    int Quiesce(Board board, Move[] legalMoves, int alpha, int beta, Timer timer) {
-        int currentPosition = EvalPos(board);
-        if( currentPosition >= beta )
-            return beta;
-        if( alpha < currentPosition )
-            alpha = currentPosition;
-
-        //Quicksort(legalMoves, 0, legalMoves.Length-1);
-
-        foreach (Move move in legalMoves){
-            if (move.IsCapture)
-            {
-
-
-                board.MakeMove(move);
-                int score = -Quiesce(board, board.GetLegalMoves(), -beta, -alpha, timer);
-                board.UndoMove(move);
-                
-                if( score >= beta )
-                    return beta;
-                if( score > alpha )
-                    alpha = score;
-
-          
-            }
-        }
-        return alpha;
     }
 
 
-    int[] pieceValues = { 0, 100, 300, 300, 500, 900, 10000 };
+    int[] pieceValues = { 0, 100, 300, 330, 500, 1100, 10000 };
     
 //	None = 0, Pawn = 1, Knight = 2, Bishop = 3, Rook = 4, Queen = 5, King = 6
 
@@ -161,71 +234,53 @@ public class MyBot : IChessBot
         }
     }; 
 
-    int EvalPos(Board board)
+    int EvalPos(Board board) //Return + Bra för oss, Return - bra för dem (VårScore - DerasScore)
     {
-        int currentEval = 0;
-           
-        int botPieceVals = 0;
-        PieceList[] AllPieces = board.GetAllPieceLists();
-
-        int piecesPositionBonus = 0;
-        int AttackedSqauresBonus = 0;
-
-        foreach (PieceList pieceList in AllPieces)
+        int Score = 0;
+        foreach (PieceList pieceList in  board.GetAllPieceLists())
         {
             PieceType ListType = pieceList.TypeOfPieceInList;
             int typeAsInt = (int)ListType;
-              
-            int AddVal = pieceValues[ typeAsInt ] * pieceList.Count*2;
-              
-            if (pieceList.IsWhitePieceList == botColor) 
-                botPieceVals += AddVal;
-            else 
-                botPieceVals -= AddVal;
-            
-            ulong PieceBitBoard = board.GetPieceBitboard(ListType, botColor);
+            bool ListCol = pieceList.IsWhitePieceList;
 
-            int m =  (pieceList.IsWhitePieceList == botColor)? 1 : -1;
+            int m =  (ListCol == board.IsWhiteToMove)? 1 : -1;
+
+
+            ulong ListBitBoard = board.GetPieceBitboard(ListType, ListCol);
+            // Give Bonus For each Piece 
+            Score += m * pieceValues[ typeAsInt ] * pieceList.Count * 3 ;    
             
-            if (typeAsInt >= 3 && typeAsInt < 6)
+
+            if (typeAsInt == 3 || typeAsInt == 4 || typeAsInt == 5) //Sliding Pieces, Else Jumping Pieces
             {
 
+                //Sliding Pieces + score for attaking Squares
                 for(int i = 0; i < pieceList.Count; i++)
                 {
-                    ulong AttackedSquare = BitboardHelper.GetSliderAttacks(ListType, pieceList.GetPiece(i).Square, board);
-                    
-                    int tmp = BitboardHelper.GetNumberOfSetBits(AttackedSquare) * m * 20;
-
-                    AttackedSqauresBonus += tmp;
-                    
+                    Square s = new(BitboardHelper.ClearAndGetIndexOfLSB(ref ListBitBoard));
+                    ulong AttackedSquare = BitboardHelper.GetSliderAttacks(ListType, s, board);               
+                    Score += m*BitboardHelper.GetNumberOfSetBits(AttackedSquare) * 22;
                 }
             } else {
-
-                for(uint i=0; i<3; i++)
+                
+                //Jumping Piecec + score for positions
+                for(int i=0; i<3; i++)
                 {
-
-                    ulong MaskedBoard = PieceBonus[ pieceList.IsWhitePieceList? 0 : 1, typeAsInt-1, i] & PieceBitBoard;
-                    
-                    piecesPositionBonus += BitboardHelper.GetNumberOfSetBits(MaskedBoard) * m * 50;
-
+                    ulong MaskedBoard = PieceBonus[ ListCol? 0 : 1, typeAsInt-1, i] & ListBitBoard;  //& PieceBitBoard;                   
+                    Score += BitboardHelper.GetNumberOfSetBits(MaskedBoard) * m * 50;
                 }
 
             }
         }
-        currentEval += botPieceVals + piecesPositionBonus + AttackedSqauresBonus;
-
-        /*if (board.IsInCheck())
-        {
-            //currentEval += 200;
-        }*/
       
-        return currentEval;
+        return Score;
+
     }
 
-   
+/*
 
     // Quicksort(arr, 0, arr.Length - 1);
-    void Quicksort(Move[] arr, int low, int high)
+    void Quicksort(Move[] arr, int low, int high, int[] scores)
     {
         if (low < high)
         {
@@ -234,26 +289,42 @@ public class MyBot : IChessBot
 
             for (int j = low; j < high; j++)
             {
-                int v1 = MoveToInt(arr[j]); //  arr[j].IsPromotion ? 0 : (arr[j].IsCapture ? 1 : 2);
-                int v2 = MoveToInt(arr[high]); //arr[high].IsPromotion ? 0 : (arr[high].IsCapture ? 1 : 2);
+              //  int v1 = MoveToInt(arr[j]); //  arr[j].IsPromotion ? 0 : (arr[j].IsCapture ? 1 : 2);
+              //  int v2 = MoveToInt(arr[high]); //arr[high].IsPromotion ? 0 : (arr[high].IsCapture ? 1 : 2);
                 
-                if ( v1 > v2 )
+                if ( scores[j] > scores[high] )
                 {
                     i++;
                     (arr[j], arr[i]) = (arr[i], arr[j]);
+                    (scores[j], scores[i]) = (scores[i], scores[j]);
                 }
             }
 
             (arr[high], arr[i+1]) = (arr[i+1], arr[high]);
+            (scores[high], scores[i+1]) = (scores[i+1], scores[high]);
 
+            
             int pivotIndex =  i + 1;
 
-            Quicksort(arr, low, pivotIndex - 1);
-            Quicksort(arr, pivotIndex + 1, high);
+            Quicksort(arr, low, pivotIndex - 1, scores);
+            Quicksort(arr, pivotIndex + 1, high, scores);
+
+
+           // int mid = (low + high) / 2;
+          //  int[] indices = { low, mid, high };
+          //  Array.Sort(indices, (a, b) => scores[b].CompareTo(scores[a]));
+          
+          //  Quicksort(arr, low,  indices[1] - 1, scores);
+          //  Quicksort(arr,  indices[1] + 1, high, scores);
+
         }
     }
 
+*/
+
     int MoveToInt(Move move){
-      return move.IsPromotion ? 6 : (move.IsCapture ? (int)move.CapturePieceType : 0);
+      return move.IsPromotion ? 6 : (move.IsCapture ? ((int)move.CapturePieceType - (int)move.MovePieceType) * 100: -999999);
     }
+
 }
+
